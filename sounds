@@ -1,0 +1,8 @@
+<script>start("/Users/hartleyscales/Integral Invaders/sounds/");</script>
+<script>onHasParentDirectory();</script>
+<script>addRow("game-over.mp3","game-over.mp3",0,29280,"28.6 kB",1747696553,"5/19/25, 6:15:53 PM");</script>
+<script>addRow("hit.mp3","hit.mp3",0,41086,"40.1 kB",1747698543,"5/19/25, 6:49:03 PM");</script>
+<script>addRow("music.mp3","music.mp3",0,611600,"597 kB",1747699016,"5/19/25, 6:56:56 PM");</script>
+<script>addRow("pew.mp3","pew.mp3",0,41086,"40.1 kB",1747698534,"5/19/25, 6:48:54 PM");</script>
+<script>addRow("reflect.mp3","reflect.mp3",0,41086,"40.1 kB",1747698540,"5/19/25, 6:49:00 PM");</script>
+<script>addRow("shoot.mp3","shoot.mp3",0,76821,"75.0 kB",1747698537,"5/19/25, 6:48:57 PM");</script>

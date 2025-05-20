@@ -1,0 +1,4 @@
+<script>start("/Users/hartleyscales/Integral Invaders/sprites/");</script>
+<script>onHasParentDirectory();</script>
+<script>addRow("alien.png","alien.png",0,150602,"147 kB",1747691633,"5/19/25, 4:53:53 PM");</script>
+<script>addRow("spaceship.png","spaceship.png",0,1458156,"1.4 MB",1747691537,"5/19/25, 4:52:17 PM");</script>

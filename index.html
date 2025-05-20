@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Integral Invaders</title>
+  <style>
+    body { margin:0; overflow:hidden; background:#000; color:#fff; font-family:monospace; }
+    #gameCanvas { display:block; margin:0 auto; background:#000; }
+    #answerSelector {
+      position:absolute; bottom:10px; left:50%; transform:translateX(-50%);
+      background:rgba(0,0,0,0.7); padding:5px 10px; border-radius:5px;
+    }
+  </style>
+</head>
+<body>
+<div id="introScreen" style="
+  position:absolute; top:0; left:0; width:100%; height:100%;
+  background:rgba(0,0,0,0.9); color:#fff; display:flex;
+  flex-direction:column; justify-content:center; align-items:center;
+  text-align:center; z-index:10;">
+  <h1 style="font-size:48px; margin:0 0 20px;">Integral Invaders</h1>
+  <p style="max-width:600px; margin-bottom:30px;">
+    Shoot the correct antiderivative to score points!<br>
+    Use ← and → to move, Space to fire.<br>
+    Click “Start” to begin.
+  </p>
+  <button id="startButton" style="
+    padding:10px 20px; font-size:24px; cursor:pointer;">
+    Start
+  </button>
+</div>
+<div id="gameOverOverlay" style="
+  position:absolute; top:0; left:0; width:100%; height:100%;
+  background:rgba(0,0,0,0.9); color:#fff; display:none;
+  flex-direction:column; justify-content:center; align-items:center;
+  text-align:center; z-index:10;">
+  <h1 style="font-size:48px; margin:0 0 20px;">Game Over</h1>
+  <p style="font-size:24px; margin-bottom:20px;">
+    Your score: <span id="finalScore">0</span>
+  </p>
+  <button id="retryButton" style="
+    padding:10px 20px; font-size:24px; cursor:pointer;">
+    Retry
+  </button>
+</div>
+<canvas id="gameCanvas"></canvas>
+<div id="answerSelector">Answer: <span id="currentAnswer"></span></div>
+<script>
+function toSuperscript(num) {
+  const map = {'0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹'};
+  return String(num).split('').map(c => map[c] || '').join('');
+}
+const canvas = document.getElementById('gameCanvas'),
+      ctx = canvas.getContext('2d');
+// disable image smoothing for crisp pixel art
+ctx.imageSmoothingEnabled = false;
+// hide game until started
+canvas.style.display = 'none';
+document.getElementById('answerSelector').style.display = 'none';
+let gameStarted = false;
+// preload bitmapped character images
+const playerImage = new Image();
+playerImage.src = 'sprites/spaceship.png';
+const invaderImage = new Image();
+invaderImage.src = 'sprites/alien.png';
+
+// load sound effects
+const shootSound    = new Audio('sounds/shoot.mp3');
+const hitSound      = new Audio('sounds/hit.mp3');
+const reflectSound  = new Audio('sounds/reflect.mp3');
+const pewSound      = new Audio('sounds/pew.mp3');
+const gameOverSound = new Audio('sounds/game-over.mp3');
+
+// background music (will start on first user interaction)
+const bgMusic = new Audio('sounds/music.mp3');
+bgMusic.loop = true;
+bgMusic.volume = 0.5;
+bgMusic.currentTime = 0;
+// play background music on first key press or click
+function startBgMusic() {
+  bgMusic.play().catch(() => {}); 
+  window.removeEventListener('keydown', startBgMusic);
+  window.removeEventListener('mousedown', startBgMusic);
+}
+window.addEventListener('keydown', startBgMusic);
+window.addEventListener('mousedown', startBgMusic);
+
+// explosion effects
+const explosions = [];
+
+let W = window.innerWidth, H = window.innerHeight;
+canvas.width = W;
+canvas.height = H;
+window.addEventListener('resize', () => {
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W;
+  canvas.height = H;
+});
+
+const INVADERS_PER_ROW = 5;
+const INVADER_ROWS = 5;
+
+
+const integrals = [];
+// polynomial integrals x^n
+for (let n = 0; n <= 7; n++) {
+  integrals.push({
+    expr: `∫ x${toSuperscript(n)} dx`,
+    answer: `x${toSuperscript(n+1)}/${n+1} + C`
+  });
+}
+
+// special and more complex integrals
+const specials = [
+  { expr: `∫ sin x dx`, answer: `-cos(x) + C` },
+  { expr: `∫ cos x dx`, answer: `sin(x) + C` },
+  { expr: `∫ tan x dx`, answer: `-ln|cos(x)| + C` },
+  { expr: `∫ sec x dx`, answer: `ln|sec(x) + tan(x)| + C` },
+  { expr: `∫ eˣ dx`, answer: `eˣ + C` },
+  { expr: `∫ x eˣ dx`, answer: `x eˣ - eˣ + C` },
+  { expr: `∫ x${toSuperscript(2)} eˣ dx`, answer: `x${toSuperscript(2)} eˣ - 2x eˣ + 2eˣ + C` },
+  { expr: `∫ 1/x dx`, answer: `ln|x| + C` },
+  { expr: `∫ 1/(1 + x${toSuperscript(2)}) dx`, answer: `arctan(x) + C` },
+  { expr: `∫ 1/√(1 - x${toSuperscript(2)}) dx`, answer: `arcsin(x) + C` },
+  { expr: `∫ sinh x dx`, answer: `cosh(x) + C` },
+  { expr: `∫ cosh x dx`, answer: `sinh(x) + C` },
+  { expr: `∫ sin² x dx`, answer: `x/2 - sin(2x)/4 + C` },
+  { expr: `∫ cos² x dx`, answer: `x/2 + sin(2x)/4 + C` }
+];
+integrals.push(...specials);
+
+function shuffle(array) {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+}
+let answerOptions = [], selectedAnswer = 0, keys = {}, score = 0, gameOver = false, difficulty = INVADER_ROWS;
+let level = 1;
+let levelFlash = 0;            // frames to show "LEVEL X"
+const PLAYER_BULLET_SPEED = -10;
+
+// starfield background
+const stars = [];
+for (let i = 0; i < 200; i++) {
+  stars.push({ x: Math.random() * W, y: Math.random() * H, size: Math.random() * 2 + 1 });
+}
+function updateStars() {
+  stars.forEach(s => {
+    s.y += 1;
+    if (s.y > H) s.y = 0;
+  });
+}
+function drawStars() {
+  ctx.fillStyle = '#fff';
+  stars.forEach(s => {
+    ctx.globalAlpha = Math.random() * 0.5 + 0.5;
+    ctx.fillRect(s.x, s.y, s.size, s.size);
+  });
+  ctx.globalAlpha = 1;
+}
+
+// Player ship
+class Player {
+  constructor(){
+    this.w = 200; this.h = 100;
+    this.x = W/2 - this.w/2; this.y = H - this.h - 50;
+    this.speed = 5;
+  }
+  update(){
+    if(keys['ArrowLeft'] && this.x>0) this.x -= this.speed;
+    if(keys['ArrowRight'] && this.x+this.w < W) this.x += this.speed;
+  }
+  draw(){
+    // draw the player sprite preserving aspect ratio
+    const aspect = playerImage.naturalWidth / playerImage.naturalHeight;
+    const drawH = this.h;
+    const drawW = drawH * aspect;
+    // center sprite within the bounding box
+    const dx = this.x + (this.w - drawW) / 2;
+    ctx.drawImage(playerImage, dx, this.y, drawW, drawH);
+  }
+  // return the actual drawn hitbox rectangle
+  hitbox(){
+    const aspect = playerImage.naturalWidth / playerImage.naturalHeight;
+    const drawH = this.h;
+    const drawW = drawH * aspect;
+    const dx = this.x + (this.w - drawW) / 2;
+    const padX = drawW * 0.3;
+    const padY = drawH * 0.3;
+    return {
+      x: dx + padX/2,
+      y: this.y + padY/2,
+      w: drawW - padX,
+      h: drawH - padY
+    };
+  }
+}
+
+// Invader
+class Invader {
+  constructor(x,y,data){
+    this.x=x; this.y=y; this.w=300; this.h=150;
+    this.expr=data.expr; this.answer=data.answer;
+    this.cooldown=100 + Math.random()*200;
+    this.vx = 0;
+    this.vy = 0;
+  }
+  update(){
+    this.cooldown--;
+    if(this.cooldown<=0){
+      invaderProjectiles.push(new Projectile(this.x+this.w/2, this.y+this.h, 3, null, false));
+      pewSound.play();
+      this.cooldown = 150 + Math.random()*300;
+    }
+    // random movement with edge bounce
+    // occasional small course change for smoother motion
+    if (Math.random() < 0.02) {                 // 2 % chance each frame
+      this.vx += (Math.random() - 0.5) * 0.6;   // nudge
+      this.vy += (Math.random() - 0.5) * 0.6;
+    }
+    // clamp velocity
+    const maxV = 3;
+    this.vx = Math.max(-maxV, Math.min(maxV, this.vx));
+    this.vy = Math.max(-maxV, Math.min(maxV, this.vy));
+
+    this.x += this.vx;
+    this.y += this.vy;
+
+    if(this.x < 0) { this.x = 0; this.vx = -this.vx; }
+    if(this.x + this.w > W) { this.x = W - this.w; this.vx = -this.vx; }
+    if(this.y < 0) { this.y = 0; this.vy = -this.vy; }
+    if(this.y + this.h > H/2) { this.y = H/2 - this.h; this.vy = -this.vy; }
+  }
+  draw(){
+    // draw the invader sprite preserving aspect ratio
+    const aspectInv = invaderImage.naturalWidth / invaderImage.naturalHeight;
+    const invDrawH = this.h;
+    const invDrawW = invDrawH * aspectInv;
+    const invDx = this.x + (this.w - invDrawW) / 2;
+    ctx.drawImage(invaderImage, invDx, this.y, invDrawW, invDrawH);
+    // draw integral inside mouth container
+    ctx.fillStyle = '#fff';
+    // mouth container sized to 50% of drawn sprite width
+    const mouthW = invDrawW * 0.5;
+    const mouthH = invDrawH * 0.25;
+    // move mouth container 5% of sprite width to the right
+    const mouthX = invDx + (invDrawW - mouthW) / 2 + invDrawW * 0.05;
+    const mouthY = this.y + (this.h - mouthH) / 2;
+    // dynamically size font
+    let fontSize = Math.floor(mouthH * 1);
+    let text = this.expr;
+    do {
+      ctx.font = `${fontSize}px monospace`;
+      if (ctx.measureText(text).width <= mouthW) break;
+      fontSize--;
+    } while (fontSize > 0);
+    // draw each character with tighter spacing
+    ctx.textBaseline = 'middle';
+    const chars = text.split('');
+    const totalWidth = chars.reduce((sum, ch) => sum + ctx.measureText(ch).width, 0);
+    // center text in the shifted mouth container
+    let xPos = mouthX + (mouthW - totalWidth) / 2;
+    const letterSpacing = -fontSize * 0.1; // tighten spacing by 10% of font size
+    for (const ch of chars) {
+      ctx.fillText(ch, xPos, this.y + this.h/2);
+      xPos += ctx.measureText(ch).width + letterSpacing;
+    }
+    // reset alignment
+    ctx.textAlign = 'start';
+    ctx.textBaseline = 'alphabetic';
+  }
+  // return the actual drawn hitbox rectangle for invader
+  hitbox(){
+    const aspectInv = invaderImage.naturalWidth / invaderImage.naturalHeight;
+    const invDrawH = this.h;
+    const invDrawW = invDrawH * aspectInv;
+    const invDx = this.x + (this.w - invDrawW) / 2;
+    const padX = invDrawW * 0.3;
+    const padY = invDrawH * 0.3;
+    return {
+      x: invDx + padX/2,
+      y: this.y + padY/2,
+      w: invDrawW - padX,
+      h: invDrawH - padY
+    };
+  }
+}
+
+// Projectiles (player or invader)
+class Projectile {
+  constructor(x,y,vy,answer,isPlayer){
+    this.x=x; this.y=y; this.vy=vy; this.r=5;
+    this.answer = answer; // only for player bullets
+    this.isPlayer = isPlayer;
+  }
+  update(){
+    this.y += this.vy;
+  }
+  draw(){
+    ctx.fillStyle = this.isPlayer ? '#ff0':'#f44';
+    ctx.beginPath();
+    ctx.arc(this.x,this.y,this.r,0,Math.PI*2);
+    ctx.fill();
+  }
+}
+
+// explosion animation
+class Explosion {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.radius = 0;
+    this.maxRadius = 50;
+    this.alpha = 1;
+  }
+  update() {
+    this.radius += 2;
+    this.alpha -= 0.04;
+  }
+  draw() {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,165,0,${this.alpha})`;
+    ctx.fill();
+    ctx.restore();
+  }
+  get alive() {
+    return this.alpha > 0;
+  }
+}
+
+// setup
+let player = new Player(),
+    invaders = [],
+    playerProjectiles = [],
+    invaderProjectiles = [];
+
+document.getElementById('startButton').onclick = () => {
+  document.getElementById('introScreen').style.display = 'none';
+  canvas.style.display = 'block';
+  document.getElementById('answerSelector').style.display = 'block';
+  gameStarted = true;
+  init();
+  loop();
+};
+document.getElementById('retryButton').onclick = () => {
+  document.getElementById('gameOverOverlay').style.display = 'none';
+  // full reset
+  score = 0;
+  level = 1;
+  levelFlash = 0;
+  gameOver = false;
+  invaders = [];
+  playerProjectiles = [];
+  invaderProjectiles = [];
+  explosions.length = 0;
+  selectedAnswer = 0;
+  updateAnswerDisplay();
+  // show game UI
+  canvas.style.display = 'block';
+  document.getElementById('answerSelector').style.display = 'block';
+  // restart loop
+  init();
+  loop();
+};
+
+function init(){
+  shuffle(integrals);
+
+  invaders = [];
+  const needed = Math.min(integrals.length, 4 + (level - 1));  // +1 alien per level
+
+  const xSpacing = W / (INVADERS_PER_ROW + 1);
+  const yStart   = 80;
+  const ySpacing = 200; // ensures no overlap (invader is 150px tall)
+
+  const displayed = integrals.slice(0, needed);
+
+  displayed.forEach((data, idx) => {
+    const row = Math.floor(idx / INVADERS_PER_ROW);
+    const col = idx % INVADERS_PER_ROW;
+    const x   = xSpacing * (col + 1);
+    const y   = yStart   + row * ySpacing;
+    invaders.push(new Invader(x, y, data));
+  });
+
+  // answers list = all invaders on screen
+  answerOptions   = displayed.map(d => d.answer);
+  selectedAnswer  = 0;
+  updateAnswerDisplay();
+}
+
+// input
+window.addEventListener('keydown', e=>{
+  keys[e.key]=true;
+  if(e.key===' ') shoot();
+});
+window.addEventListener('keyup', e=>{ keys[e.key]=false; });
+
+function updateAnswerDisplay(){
+  document.getElementById('currentAnswer').textContent = answerOptions[selectedAnswer];
+}
+
+function shoot(){
+  if(answerOptions.length === 0) return;      // nothing to shoot at
+  shootSound.play();
+  playerProjectiles.push(
+    new Projectile(
+      player.x + player.w/2,
+      player.y,
+      PLAYER_BULLET_SPEED,
+      answerOptions[selectedAnswer],
+      true)
+  );
+  // keep the same selectedAnswer; only refresh after correct hit
+}
+
+// collision detection
+function collides(a,b){
+  return a.x > b.x && a.x < b.x+b.w && a.y > b.y && a.y < b.y+b.h;
+}
+
+function update(){
+  updateStars();
+  if(gameOver) return;
+  player.update();
+  invaders.forEach(i=>i.update());
+
+  playerProjectiles.forEach((p,i)=>{
+    p.update();
+    invaders.forEach((inv,j)=>{
+      if(p.isPlayer){
+        const ib = inv.hitbox();
+        if(p.x > ib.x && p.x < ib.x + ib.w && p.y > ib.y && p.y < ib.y + ib.h){
+          if(p.answer === inv.answer){
+            // spawn explosion at invader location
+            explosions.push(new Explosion(inv.x + inv.w/2, inv.y + inv.h/2));
+            hitSound.play();
+            invaders.splice(j,1);
+            score++;
+            answerOptions = invaders.map(i => i.answer);
+            if(answerOptions.length === 0){
+              document.getElementById('currentAnswer').textContent = '';
+            }else{
+              selectedAnswer = 0;
+              updateAnswerDisplay();
+            }
+            // remove bullet on correct hit
+            playerProjectiles.splice(i,1);
+          } else {
+            // bounce wrong answer back
+            p.vy = -p.vy;
+            p.isPlayer = false;
+            reflectSound.play();
+          }
+        }
+      }
+    });
+    if(p.y < 0 || p.y > H) playerProjectiles.splice(i,1);
+  });
+
+  invaderProjectiles.forEach((p,i)=>{
+    p.update();
+    const hb = player.hitbox();
+    if(p.y > hb.y && p.x > hb.x && p.x < hb.x + hb.w){
+      if(!gameOver){
+        gameOverSound.play();
+        gameOver = true;
+        if(gameOver){
+          document.getElementById('finalScore').textContent = score;
+          document.getElementById('gameOverOverlay').style.display = 'flex';
+        }
+      }
+    }
+    if(p.y > H) invaderProjectiles.splice(i,1);
+  });
+
+  playerProjectiles.forEach((p,i)=>{
+    if(!p.isPlayer && p.y > player.hitbox().y){
+      const hb = player.hitbox();
+      if(p.x > hb.x && p.x < hb.x + hb.w){
+        if(!gameOver){
+          gameOverSound.play();
+          gameOver = true;
+          if(gameOver){
+            document.getElementById('finalScore').textContent = score;
+            document.getElementById('gameOverOverlay').style.display = 'flex';
+          }
+        }
+      }
+    }
+  });
+
+  if(invaders.length === 0) {
+    level++;
+    levelFlash = 180;   // show for 3 seconds at 60 fps
+    init();
+  }
+
+  // update and remove finished explosions
+  explosions.forEach((exp, i) => {
+    exp.update();
+    if (!exp.alive) explosions.splice(i, 1);
+  });
+}
+
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  drawStars();
+  // draw explosions
+  explosions.forEach(exp => exp.draw());
+  player.draw();
+  invaders.forEach(i=>i.draw());
+  playerProjectiles.forEach(p=>p.draw());
+  invaderProjectiles.forEach(p=>p.draw());
+
+  ctx.fillStyle='#fff';
+  ctx.font = '24px monospace';
+  ctx.fillText(`Score: ${score}`, 10,20);
+  if(levelFlash > 0){
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(0,0,W,H);
+    ctx.fillStyle = '#0f0';
+    ctx.font = '36px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(`LEVEL ${level}`, W/2, H/2);
+    levelFlash--;
+  }
+  // Removed canvas "Game Over" overlay; handled by DOM overlay now.
+}
+
+function loop(){
+  if(!gameStarted) return;
+  update();
+  draw();
+  if(!gameOver) requestAnimationFrame(loop);
+}
+
+</script>
+</body>
+</html>
