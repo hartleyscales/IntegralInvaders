@@ -110,25 +110,22 @@ for (let n = 0; n <= 7; n++) {
     answer: `x${toSuperscript(n+1)}/${n+1} + C`
   });
 }
-
-// special and more complex integrals
-const specials = [
-  { expr: `∫ sin x dx`, answer: `-cos(x) + C` },
-  { expr: `∫ cos x dx`, answer: `sin(x) + C` },
-  { expr: `∫ tan x dx`, answer: `-ln|cos(x)| + C` },
-  { expr: `∫ sec x dx`, answer: `ln|sec(x) + tan(x)| + C` },
-  { expr: `∫ eˣ dx`, answer: `eˣ + C` },
-  { expr: `∫ x eˣ dx`, answer: `x eˣ - eˣ + C` },
-  { expr: `∫ x${toSuperscript(2)} eˣ dx`, answer: `x${toSuperscript(2)} eˣ - 2x eˣ + 2eˣ + C` },
-  { expr: `∫ 1/x dx`, answer: `ln|x| + C` },
-  { expr: `∫ 1/(1 + x${toSuperscript(2)}) dx`, answer: `arctan(x) + C` },
-  { expr: `∫ 1/√(1 - x${toSuperscript(2)}) dx`, answer: `arcsin(x) + C` },
-  { expr: `∫ sinh x dx`, answer: `cosh(x) + C` },
-  { expr: `∫ cosh x dx`, answer: `sinh(x) + C` },
-  { expr: `∫ sin² x dx`, answer: `x/2 - sin(2x)/4 + C` },
-  { expr: `∫ cos² x dx`, answer: `x/2 + sin(2x)/4 + C` }
-];
-integrals.push(...specials);
+// integrals covered in BC Calculus
+integrals.push(
+  { expr: `∫ k dx`,           answer: `kx + C` },
+  { expr: `∫ 1/x dx`,           answer: `ln|x| + C` },
+  { expr: `∫ eˣ dx`,           answer: `eˣ + C` },
+  { expr: `∫ aˣ dx`,           answer: `aˣ/ln a + C` },
+  { expr: `∫ sin(x) dx`,       answer: `-cos(x) + C` },
+  { expr: `∫ cos(x) dx`,       answer: `sin(x) + C` },
+  { expr: `∫ tan(x) dx`,       answer: `-ln|cos(x)| + C` },
+  { expr: `∫ sec²(x) dx`,      answer: `tan(x) + C` },
+  { expr: `∫ sec(x) tan(x) dx`,answer: `sec(x) + C` },
+  { expr: `∫ csc²(x) dx`,      answer: `-cot(x) + C` },
+  { expr: `∫ csc(x) cot(x) dx`,answer: `-csc(x) + C` },
+  { expr: `∫ 1/(1+x²) dx`,     answer: `arctan(x) + C` },
+  { expr: `∫ 1/√(1−x²) dx`,    answer: `arcsin(x) + C` },
+);
 
 function shuffle(array) {
   for (let i = array.length - 1; i > 0; i--) {
@@ -465,7 +462,7 @@ function update(){
   invaderProjectiles.forEach((p,i)=>{
     p.update();
     const hb = player.hitbox();
-    if(p.y > hb.y && p.x > hb.x && p.x < hb.x + hb.w){
+    if(p.y > hb.y && p.y < hb.y + hb.h && p.x > hb.x && p.x < hb.x + hb.w){
       if(!gameOver){
         gameOverSound.play();
         gameOver = true;
@@ -479,9 +476,9 @@ function update(){
   });
 
   playerProjectiles.forEach((p,i)=>{
-    if(!p.isPlayer && p.y > player.hitbox().y){
+    if(!p.isPlayer){
       const hb = player.hitbox();
-      if(p.x > hb.x && p.x < hb.x + hb.w){
+      if(p.y > hb.y && p.y < hb.y + hb.h && p.x > hb.x && p.x < hb.x + hb.w){
         if(!gameOver){
           gameOverSound.play();
           gameOver = true;
